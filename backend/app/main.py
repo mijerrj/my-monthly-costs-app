@@ -5,6 +5,7 @@ from app.models import Base, User, Cost
 from app.schemas import UserCreate, Token, CostCreate, CostResponse
 from app.auth import create_jwt_token, verify_password, hash_password
 from app.auth import oauth2_scheme, decode_jwt_token
+from app.utils import log_audit
 
 app = FastAPI()
 
@@ -42,6 +43,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     # Generate JWT token
     token = create_jwt_token({"user_id": db_user.id})
+    log_audit("user.register", {"user_id": db_user.id, "username": db_user.username})
     return {"access_token": token, "token_type": "bearer"}
 
 # Login and get a JWT token
@@ -53,6 +55,7 @@ def login(user: UserCreate, db: Session = Depends(get_db)):
 
     # Generate JWT token
     token = create_jwt_token({"user_id": db_user.id})
+    log_audit("user.register", {"user_id": db_user.id})
     return {"access_token": token, "token_type": "bearer"}
 
 # Add a new cost
@@ -72,6 +75,12 @@ def add_cost(
     db.add(db_cost)
     db.commit()
     db.refresh(db_cost)
+    log_audit("cost.created", {
+        "user_id": current_user.id,
+        "cost_id": db_cost.id,
+        "name": db_cost.name,
+        "amount": db_cost.amount
+    })
     return db_cost
 
 # Get all costs
