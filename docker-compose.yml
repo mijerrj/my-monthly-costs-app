@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres
+    container_name: my-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: costs_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  backend:
+    container_name: my-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DB_USER: myuser
+      DB_PASSWORD: mypassword
+      DB_NAME: costs_db
+      DB_HOST: db
+      JWT_SECRET_KEY: supersecretkey
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8083:8083"
+    networks:
+      - backend
+    depends_on:
+      - db
+
+networks:
+  backend:
+
+volumes:
+  postgres_data:

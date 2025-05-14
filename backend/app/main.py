@@ -1,0 +1,70 @@
+from fastapi import FastAPI, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from app.database import SessionLocal, engine
+from app.models import Base, User, Cost
+from app.schemas import UserCreate, Token, CostCreate, CostResponse
+from app.auth import create_jwt_token, verify_password, hash_password
+
+app = FastAPI()
+
+# Ensure all database tables are created
+Base.metadata.create_all(bind=engine)
+
+# Dependency to get a database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Register a new user
+@app.post("/register/", response_model=Token)
+def register(user: UserCreate, db: Session = Depends(get_db)):
+    # Check if user already exists
+    existing_user = db.query(User).filter(User.username == user.username).first()
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
+
+    # Hash the password and save the user
+    hashed_password = hash_password(user.password)
+    db_user = User(username=user.username, password_hash=hashed_password)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    # Generate JWT token
+    token = create_jwt_token({"user_id": db_user.id})
+    return {"access_token": token, "token_type": "bearer"}
+
+# Login and get a JWT token
+@app.post("/login/", response_model=Token)
+def login(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.username == user.username).first()
+    if not db_user or not verify_password(user.password, db_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    # Generate JWT token
+    token = create_jwt_token({"user_id": db_user.id})
+    return {"access_token": token, "token_type": "bearer"}
+
+# Add a new cost
+@app.post("/costs/", response_model=CostResponse)
+def add_cost(cost: CostCreate, db: Session = Depends(get_db)):
+    db_cost = Cost(
+        name=cost.name,
+        amount=cost.amount,
+        merchant_name=cost.merchant_name,
+        description=cost.description,
+        user_id=1  # Replace with real user ID from JWT in the next step
+    )
+    db.add(db_cost)
+    db.commit()
+    db.refresh(db_cost)
+    return db_cost
+
+# Get all costs
+@app.get("/costs/", response_model=list[CostResponse])
+def get_costs(db: Session = Depends(get_db)):
+    costs = db.query(Cost).all()
+    return costs
