@@ -4,6 +4,7 @@ from app.database import SessionLocal, engine
 from app.models import Base, User, Cost
 from app.schemas import UserCreate, Token, CostCreate, CostResponse
 from app.auth import create_jwt_token, verify_password, hash_password
+from app.auth import oauth2_scheme, decode_jwt_token
 
 app = FastAPI()
 
@@ -18,6 +19,13 @@ def get_db():
     finally:
         db.close()
 
+ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
+     user_id = decode_jwt_token(token)
+     user = db.query(User).get(user_id)
+     if not user:
+         raise HTTPException(status_code=404, detail="User not found")
+     return user
+
 # Register a new user
 @app.post("/register/", response_model=Token)
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -30,8 +38,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     hashed_password = hash_password(user.password)
     db_user = User(username=user.username, password_hash=hashed_password)
     db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    db.commit()    db.refresh(db_user)
 
     # Generate JWT token
     token = create_jwt_token({"user_id": db_user.id})
@@ -50,13 +57,17 @@ def login(user: UserCreate, db: Session = Depends(get_db)):
 
 # Add a new cost
 @app.post("/costs/", response_model=CostResponse)
-def add_cost(cost: CostCreate, db: Session = Depends(get_db)):
-    db_cost = Cost(
+def add_cost(
+    cost: CostCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+     db_cost = Cost(
         name=cost.name,
         amount=cost.amount,
         merchant_name=cost.merchant_name,
         description=cost.description,
-        user_id=1  # Replace with real user ID from JWT in the next step
+        user_id=current_user.id  # Replace with real user ID from JWT in the next step
     )
     db.add(db_cost)
     db.commit()
@@ -65,6 +76,8 @@ def add_cost(cost: CostCreate, db: Session = Depends(get_db)):
 
 # Get all costs
 @app.get("/costs/", response_model=list[CostResponse])
-def get_costs(db: Session = Depends(get_db)):
-    costs = db.query(Cost).all()
-    return costs
+def get_costs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return db.query(Cost).filter(Cost.user_id == current_user.id).all()
